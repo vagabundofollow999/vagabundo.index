@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Transmisión en Vivo</title>
+  <script src="https://ajax.googleapis.com/ajax/libs/shaka-player/3.2.0/shaka-player.ui.js"></script>
+  <link rel="stylesheet" href="https://ajax.googleapis.com/ajax/libs/shaka-player/3.2.0/controls.css">
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: #000;
+      font-family: 'Segoe UI', sans-serif;
+    }
+
+    #player-container {
+      position: relative;
+      height: 100%;
+      width: 100%;
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    #live-indicator {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      display: flex;
+      align-items: center;
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.85);
+      background-color: rgba(255, 0, 0, 0.15);
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-weight: 400;
+      backdrop-filter: blur(4px);
+      display: none;
+    }
+
+    #live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: red;
+      margin-right: 6px;
+      animation: blink 1s infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    #no-signal {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 18px;
+      color: rgba(255, 255, 255, 0.75);
+      background: rgba(0, 0, 0, 0.4);
+      padding: 16px 24px;
+      border-radius: 8px;
+      display: none;
+      backdrop-filter: blur(2px);
+      animation: fadeIn 0.5s ease;
+    }
+
+    #quality-indicator {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.7);
+      background: rgba(0, 0, 0, 0.3);
+      padding: 4px 10px;
+      border-radius: 12px;
+      display: none;
+      backdrop-filter: blur(3px);
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: scale(0.95) translate(-50%, -50%); }
+      to { opacity: 1; transform: scale(1) translate(-50%, -50%); }
+    }
+  </style>
+</head>
+<body>
+  <div id="player-container" data-shaka-player-container>
+    <div id="live-indicator"><div id="live-dot"></div> EN VIVO</div>
+    <div id="no-signal">SIN SEÑAL</div>
+    <div id="quality-indicator">Resolución: -</div>
+    <video autoplay data-shaka-player id="video"></video>
+  </div>
+
+  <script>
+    const manifestUri = 'https://sam-bo-cach02.tigo.com.bo/ccur-session/01_44790322/VMX4_widevine/rolling-buffer/TIGOSPORTSPLUSBO/TIGOSPORTSPLUSBO/transmux/index.mpd?ccur_fmt_type=fmp4';
+    let player, liveIndicator, noSignal, qualityIndicator, reconnectInterval;
+
+    async function loadStream() {
+      try {
+        await player.load(manifestUri);
+        console.log('Video cargado correctamente');
+        showLive();
+        startQualityMonitor();
+      } catch (error) {
+        console.error('Error al cargar el video', error);
+        showNoSignal();
+        scheduleReconnect();
+      }
+    }
+
+    function showLive() {
+      liveIndicator.style.display = 'flex';
+      noSignal.style.display = 'none';
+      qualityIndicator.style.display = 'block';
+    }
+
+    function showNoSignal() {
+      liveIndicator.style.display = 'none';
+      noSignal.style.display = 'block';
+      qualityIndicator.style.display = 'none';
+    }
+
+    function scheduleReconnect() {
+      if (reconnectInterval) return;
+      reconnectInterval = setInterval(async () => {
+        console.log('Intentando reconectar...');
+        try {
+          await player.load(manifestUri);
+          console.log('Reconexión exitosa');
+          clearInterval(reconnectInterval);
+          reconnectInterval = null;
+          showLive();
+        } catch (error) {
+          console.log('Reconexión fallida');
+        }
+      }, 2000); // Ahora intenta reconectar cada 2 segundos
+    }
+
+    function startQualityMonitor() {
+      setInterval(() => {
+        const tracks = player.getVariantTracks();
+        const active = tracks.find(t => t.active);
+        if (active) {
+          qualityIndicator.textContent = `Resolución: ${active.height}p`;
+        }
+      }, 3000);
+    }
+
+    async function init() {
+      const video = document.getElementById('video');
+      liveIndicator = document.getElementById('live-indicator');
+      noSignal = document.getElementById('no-signal');
+      qualityIndicator = document.getElementById('quality-indicator');
+
+      const ui = video['ui'];
+      const controls = ui.getControls();
+      player = controls.getPlayer();
+
+      player.configure({
+        drm: {
+          clearKeys: {
+            '621a7d3654e190d28f57d4e44cb33eb8': '1af4c82c4c3c31398d6ffbf5c86f9825',
+          }
+        }
+      });
+
+      video.addEventListener('playing', showLive);
+      video.addEventListener('pause', () => liveIndicator.style.display = 'none');
+      player.addEventListener('error', () => {
+        showNoSignal();
+        scheduleReconnect();
+      });
+
+      await loadStream();
+    }
+
+    document.addEventListener('shaka-ui-loaded', init);
+    document.addEventListener('shaka-ui-load-failed', () => {
+      document.getElementById('no-signal').style.display = 'block';
+      console.error('No se pudo cargar la interfaz de Shaka Player');
+    });
+  </script>
+</body>
+</html>
